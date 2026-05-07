@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QueueLess — Skip the Wait</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --teal: #5ee8c0;
+      --teal-dim: rgba(94,232,192,0.12);
+      --teal-border: rgba(94,232,192,0.25);
+      --bg: #080c18;
+      --surface: #0e1424;
+      --surface2: #131929;
+      --text: #e4e8f0;
+      --text-muted: rgba(228,232,240,0.45);
+      --text-dim: rgba(228,232,240,0.25);
+      --border: rgba(255,255,255,0.07);
+      --border-mid: rgba(255,255,255,0.12);
+      --amber: #ffbe50;
+      --red: #ff6b6b;
+      --radius-sm: 10px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      max-width: 480px;
+      margin: 0 auto;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Background grid pattern */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(94,232,192,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(94,232,192,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── TOP BAR ── */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(8,12,24,0.92);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 0.5px solid var(--border);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 22px;
+      letter-spacing: -0.5px;
+      color: var(--teal);
+    }
+    .logo span { color: var(--text); }
+
+    .loc-chip {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--surface2);
+      border: 0.5px solid var(--border-mid);
+      border-radius: 30px;
+      padding: 6px 13px;
+    }
+    .loc-dot {
+      width: 7px; height: 7px;
+      background: var(--teal);
+      border-radius: 50%;
+      animation: pulse 2.2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%,100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.5); opacity: 0.4; }
+    }
+
+    /* ── HERO ── */
+    .hero {
+      padding: 32px 20px 20px;
+      position: relative;
+      z-index: 1;
+    }
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 11px;
+      color: var(--teal);
+      background: var(--teal-dim);
+      border: 0.5px solid var(--teal-border);
+      border-radius: 30px;
+      padding: 5px 12px;
+      margin-bottom: 14px;
+      letter-spacing: 0.5px;
+      font-weight: 500;
+      text-transform: uppercase;
+    }
+    .hero-tag .live-dot {
+      width: 5px; height: 5px;
+      background: var(--teal);
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+    .hero h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: 30px;
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+    .hero h1 em {
+      font-style: normal;
+      color: var(--teal);
+    }
+    .hero p {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* ── STATS ROW ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      padding: 0 20px 20px;
+      position: relative;
+      z-index: 1;
+    }
+    .stat-box {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px 12px;
+      text-align: center;
+    }
+    .stat-box .s-val {
+      font-family: 'Syne', sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--teal);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .stat-box .s-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    /* ── FILTER PILLS ── */
+    .filter-strip {
+      display: flex;
+      gap: 8px;
+      padding: 0 20px 18px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      position: relative;
+      z-index: 1;
+    }
+    .filter-strip::-webkit-scrollbar { display: none; }
+    .pill {
+      flex-shrink: 0;
+      padding: 7px 16px;
+      border-radius: 30px;
+      border: 0.5px solid var(--border-mid);
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .pill:hover { border-color: var(--teal-border); color: var(--teal); }
+    .pill.active {
+      background: var(--teal);
+      color: #080c18;
+      border-color: var(--teal);
+      font-weight: 600;
+    }
+
+    /* ── SECTION LABEL ── */
+    .section-label {
+      padding: 0 20px 10px;
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 500;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── HOSPITAL CARDS ── */
+    .hospital-list {
+      padding: 0 20px 120px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hosp-card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      transition: transform 0.2s, border-color 0.3s;
+      cursor: pointer;
+      animation: fadeIn 0.4s ease both;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .hosp-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--teal-border);
+    }
+
+    .card-top {
+      padding: 18px 18px 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+    }
+    .hosp-icon {
+      width: 48px; height: 48px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+    .hosp-info { flex: 1; min-width: 0; }
+    .hosp-name {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .hosp-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .hosp-sub .sep { color: var(--text-dim); }
+
+    .wait-chip {
+      flex-shrink: 0;
+      padding: 5px 13px;
+      border-radius: 30px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .wait-low  { background: rgba(94,232,192,0.12); color: #5ee8c0; border: 0.5px solid rgba(94,232,192,0.25); }
+    .wait-med  { background: rgba(255,190,80,0.12); color: #ffbe50; border: 0.5px solid rgba(255,190,80,0.25); }
+    .wait-high { background: rgba(255,107,107,0.12); color: #ff6b6b; border: 0.5px solid rgba(255,107,107,0.25); }
+
+    .card-bar {
+      height: 3px;
+      background: rgba(255,255,255,0.05);
+      margin: 0 18px;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .card-bar-fill { height: 100%; border-radius: 2px; transition: width 1.2s ease; }
+
+    .card-bottom {
+      padding: 14px 18px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .token-row { display: flex; gap: 22px; }
+    .tok {
+      display: flex;
+      flex-direction: column;
+    }
+    .tok .t-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      margin-bottom: 3px;
+    }
+    .tok .t-val {
+      font-family: 'Syne', sans-serif;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .tok .t-val.green { color: var(--teal); }
+
+    .join-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 18px;
+      background: var(--teal);
+      color: #080c18;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 600;
+      font-family: 'DM Sans', sans-serif;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .join-btn:hover { background: #7af0d2; transform: scale(1.03); }
+    .join-btn:active { transform: scale(0.97); }
+    .join-btn svg { width: 14px; height: 14px; }
+
+    /* ── TICKET OVERLAY ── */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.88);
+      z-index: 100;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0;
+    }
+    .overlay.open { display: flex; }
+
+    .ticket-sheet {
+      background: var(--surface);
+      border-radius: 28px 28px 0 0;
+      border: 0.5px solid var(--border-mid);
+      border-bottom: none;
+      width: 100%;
+      max-width: 480px;
+      padding: 32px 24px 40px;
+      animation: slideUp 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+      max-height: 92vh;
+      overflow-y: auto;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+
+    .sheet-handle {
+      width: 40px; height: 4px;
+      background: var(--border-mid);
+      border-radius: 2px;
+      margin: 0 auto 28px;
+    }
+
+    .ticket-hosp-name {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: center;
+      margin-bottom: 4px;
+    }
+    .ticket-dept-name {
+      font-size: 16px;
+      font-weight: 600;
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .token-hero {
+      background: linear-gradient(135deg, rgba(94,232,192,0.07) 0%, rgba(94,232,192,0.02) 100%);
+      border: 1px solid var(--teal-border);
+      border-radius: 20px;
+      padding: 28px 24px;
+      text-align: center;
+      margin-bottom: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+    .token-hero::before {
+      content: '';
+      position: absolute;
+      top: -30px; right: -30px;
+      width: 120px; height: 120px;
+      background: radial-gradient(circle, rgba(94,232,192,0.08) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+    .t-hero-label {
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+    .t-hero-num {
+      font-family: 'Syne', sans-serif;
+      font-size: 64px;
+      font-weight: 800;
+      color: var(--teal);
+      line-height: 1;
+      letter-spacing: -2px;
+    }
+
+    .ticket-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .ts-box {
+      background: var(--surface2);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px 10px;
+      text-align: center;
+    }
+    .ts-box .ts-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.9px;
+      color: var(--text-dim);
+      margin-bottom: 5px;
+    }
+    .ts-box .ts-val {
+      font-family: 'Syne', sans-serif;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .progress-wrap { margin-bottom: 18px; }
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+    .progress-track {
+      height: 5px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: var(--teal);
+      border-radius: 3px;
+      transition: width 1s ease;
+    }
+
+    .ai-insight {
+      background: rgba(94,232,192,0.04);
+      border: 0.5px solid var(--teal-border);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      margin-bottom: 18px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      min-height: 56px;
+    }
+    .ai-icon {
+      font-size: 16px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .ai-text {
+      font-size: 13px;
+      color: rgba(228,232,240,0.65);
+      line-height: 1.6;
+    }
+    .ai-text.loading {
+      opacity: 0.4;
+      animation: blink 1s steps(1) infinite;
+    }
+    @keyframes blink { 50% { opacity: 0.1; } }
+
+    .status-box {
+      background: var(--surface2);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 22px;
+      line-height: 1.5;
+      border: 0.5px solid var(--border);
+    }
+
+    .sheet-actions { display: flex; gap: 10px; }
+    .share-btn {
+      flex: 1;
+      padding: 13px;
+      background: var(--surface2);
+      border: 0.5px solid var(--border-mid);
+      border-radius: var(--radius-md);
+      color: var(--text-muted);
+      font-size: 14px;
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .share-btn:hover { background: rgba(255,255,255,0.07); color: var(--text); }
+    .close-sheet {
+      flex: 1;
+      padding: 13px;
+      background: rgba(255,255,255,0.06);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--text-muted);
+      font-size: 14px;
+      font-family: 'DM Sans', sans-serif;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .close-sheet:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+
+    /* ── BOTTOM NAV ── */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 480px;
+      background: rgba(8,12,24,0.95);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-top: 0.5px solid var(--border);
+      padding: 14px 24px 24px;
+      display: flex;
+      justify-content: space-around;
+      z-index: 40;
+    }
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      font-size: 10px;
+      color: var(--text-dim);
+      transition: color 0.2s;
+    }
+    .nav-item.active { color: var(--teal); }
+    .nav-item svg { width: 22px; height: 22px; }
+
+    /* ── TOAST ── */
+    .toast {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-8px);
+      background: #1a2535;
+      border: 0.5px solid var(--teal-border);
+      color: var(--teal);
+      padding: 10px 20px;
+      border-radius: 30px;
+      font-size: 13px;
+      font-weight: 500;
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 200;
+      white-space: nowrap;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ── EMPTY STATE ── */
+    .empty-state {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--text-dim);
+      font-size: 14px;
+    }
+    .empty-state .e-icon { font-size: 40px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+
+<div id="toast" class="toast"></div>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="logo">Queue<span>Less</span></div>
+  <div class="loc-chip">
+    <div class="loc-dot"></div>
+    Himachal Pradesh
+  </div>
+</div>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-tag">
+    <div class="live-dot"></div>
+    Live Updates
+  </div>
+  <h1>Skip the wait,<br>not the <em>care.</em></h1>
+  <p>Join hospital queues remotely. Get notified when it's your turn.</p>
+</div>
+
+<!-- STATS -->
+<div class="stats-row">
+  <div class="stat-box">
+    <div class="s-val" id="statHosps">4</div>
+    <div class="s-label">Hospitals</div>
+  </div>
+  <div class="stat-box">
+    <div class="s-val" id="statTokens">0</div>
+    <div class="s-label">My Tokens</div>
+  </div>
+  <div class="stat-box">
+    <div class="s-val" id="statAvgWait">—</div>
+    <div class="s-label">Avg Wait</div>
+  </div>
+</div>
+
+<!-- FILTERS -->
+<div class="filter-strip">
+  <button class="pill active" data-filter="all">🏥 All</button>
+  <button class="pill" data-filter="low">⚡ Quick (&lt;15m)</button>
+  <button class="pill" data-filter="govt">🏛 Govt</button>
+  <button class="pill" data-filter="private">🏬 Private</button>
+  <button class="pill" data-filter="joined">✅ Joined</button>
+</div>
+
+<div class="section-label" id="listLabel">Nearby Hospitals</div>
+<div class="hospital-list" id="hospList"></div>
+
+<!-- TICKET SHEET -->
+<div class="overlay" id="overlay">
+  <div class="ticket-sheet">
+    <div class="sheet-handle"></div>
+    <div class="ticket-hosp-name" id="shHosp"></div>
+    <div class="ticket-dept-name" id="shDept"></div>
+
+    <div class="token-hero">
+      <div class="t-hero-label">Your Token Number</div>
+      <div class="t-hero-num" id="shNum">—</div>
+    </div>
+
+    <div class="ticket-stats">
+      <div class="ts-box">
+        <div class="ts-label">Serving</div>
+        <div class="ts-val" id="shCurr" style="color:var(--teal)">—</div>
+      </div>
+      <div class="ts-box">
+        <div class="ts-label">Ahead</div>
+        <div class="ts-val" id="shAhead">—</div>
+      </div>
+      <div class="ts-box">
+        <div class="ts-label">Est. Wait</div>
+        <div class="ts-val" id="shWait">—</div>
+      </div>
+    </div>
+
+    <div class="progress-wrap">
+      <div class="progress-header">
+        <span>Progress</span>
+        <span id="shPct">—</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="shProgressFill" style="width:5%"></div>
+      </div>
+    </div>
+
+    <div class="ai-insight">
+      <div class="ai-icon">✦</div>
+      <div class="ai-text loading" id="shAiText">Getting AI insights…</div>
+    </div>
+
+    <div class="status-box" id="shStatus">🟡 Waiting — you'll be notified when your turn is near.</div>
+
+    <div class="sheet-actions">
+      <button class="share-btn" onclick="shareTicket()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        Share
+      </button>
+      <button class="close-sheet" onclick="closeSheet()">✕ Dismiss</button>
+    </div>
+  </div>
+</div>
+
+<!-- BOTTOM NAV -->
+<div class="bottom-nav">
+  <div class="nav-item active">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+    </svg>
+    Home
+  </div>
+  <div class="nav-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    Search
+  </div>
+  <div class="nav-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+    </svg>
+    My Tokens
+  </div>
+  <div class="nav-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+    </svg>
+    Profile
+  </div>
+</div>
+
+<script>
+  const HOSPITALS = [
+    { id: 1, name: 'City Hospital', dept: 'General OPD', icon: '🏥', bg: 'rgba(94,232,192,0.1)', type: 'govt', current: 24, totalIssued: 37, waitMins: 18, dist: '1.2 km', barColor: '#5ee8c0' },
+    { id: 2, name: 'Indira Gandhi Medical', dept: 'Casualty & OPD', icon: '🏨', bg: 'rgba(255,190,80,0.1)', type: 'govt', current: 11, totalIssued: 19, waitMins: 35, dist: '2.8 km', barColor: '#ffbe50' },
+    { id: 3, name: 'Snowfield Clinic', dept: 'Orthopaedics', icon: '🩺', bg: 'rgba(160,143,255,0.1)', type: 'private', current: 5, totalIssued: 6, waitMins: 8, dist: '0.5 km', barColor: '#a08fff' },
+    { id: 4, name: 'Valley Care Hospital', dept: 'Paediatrics', icon: '🧒', bg: 'rgba(255,120,120,0.1)', type: 'private', current: 31, totalIssued: 51, waitMins: 52, dist: '4.1 km', barColor: '#ff8080' },
+  ];
+
+  let activeFilter = 'all';
+  let myTokens = {};      // hospId -> token number
+  let simInterval = null;
+  let activeHospId = null;
+
+  function waitClass(mins) {
+    if (mins <= 15) return 'wait-low';
+    if (mins <= 30) return 'wait-med';
+    return 'wait-high';
+  }
+
+  function padNum(n) { return String(n).padStart(2, '0'); }
+
+  function renderList() {
+    const list = document.getElementById('hospList');
+    const label = document.getElementById('listLabel');
+
+    const filtered = HOSPITALS.filter(h => {
+      if (activeFilter === 'all') return true;
+      if (activeFilter === 'low') return h.waitMins <= 15;
+      if (activeFilter === 'joined') return !!myTokens[h.id];
+      return h.type === activeFilter;
+    });
+
+    if (filtered.length === 0) {
+      list.innerHTML = '<div class="empty-state"><div class="e-icon">🔍</div><div>No hospitals match this filter</div></div>';
+      return;
+    }
+
+    label.textContent = activeFilter === 'joined' ? 'Your Active Queues' : 'Nearby Hospitals';
+
+    list.innerHTML = filtered.map((h, i) => {
+      const pct = Math.round((h.current / (h.totalIssued + 1)) * 100);
+      const wc = waitClass(h.waitMins);
+      const hasToken = !!myTokens[h.id];
+      return `
+        <div class="hosp-card" style="animation-delay:${i * 0.07}s" onclick="openSheet(${h.id})">
+          <div class="card-top">
+            <div class="hosp-icon" style="background:${h.bg}">${h.icon}</div>
+            <div class="hosp-info">
+              <div class="hosp-name">${h.name}</div>
+              <div class="hosp-sub">
+                <span>${h.dept}</span>
+                <span class="sep">·</span>
+                <span>${h.dist}</span>
+                ${hasToken ? '<span class="sep">·</span><span style="color:var(--teal);font-weight:600">✓ Joined</span>' : ''}
+              </div>
+            </div>
+            <span class="wait-chip ${wc}">${h.waitMins}m</span>
+          </div>
+          <div class="card-bar">
+            <div class="card-bar-fill" style="width:${pct}%;background:${h.barColor}"></div>
+          </div>
+          <div class="card-bottom">
+            <div class="token-row">
+              <div class="tok">
+                <span class="t-label">Serving</span>
+                <span class="t-val green" id="card-curr-${h.id}">${padNum(h.current)}</span>
+              </div>
+              <div class="tok">
+                <span class="t-label">Issued</span>
+                <span class="t-val">${h.totalIssued}</span>
+              </div>
+              ${hasToken ? `<div class="tok"><span class="t-label">My Token</span><span class="t-val" style="color:#a08fff">${padNum(myTokens[h.id])}</span></div>` : ''}
+            </div>
+            <button class="join-btn" onclick="event.stopPropagation(); joinQueue(${h.id})">
+              ${hasToken ? 'View Token' : 'Join Queue'}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    updateStats();
+  }
+
+  function updateStats() {
+    const count = Object.keys(myTokens).length;
+    document.getElementById('statTokens').textContent = count;
+    if (count > 0) {
+      const waits = Object.keys(myTokens).map(id => {
+        const h = HOSPITALS.find(x => x.id == id);
+        return h ? Math.round((myTokens[id] - h.current) * 2.1) : 0;
+      });
+      const avg = Math.round(waits.reduce((a, b) => a + b, 0) / waits.length);
+      document.getElementById('statAvgWait').textContent = avg + 'm';
+    } else {
+      document.getElementById('statAvgWait').textContent = '—';
+    }
+  }
+
+  function joinQueue(id) {
+    const h = HOSPITALS.find(x => x.id === id);
+    if (!myTokens[id]) {
+      h.totalIssued++;
+      myTokens[id] = h.totalIssued;
+      showToast('✓ Queue joined! Token #' + padNum(myTokens[id]));
+    }
+    openSheet(id);
+    renderList();
+  }
+
+  function openSheet(id) {
+    if (!myTokens[id]) { joinQueue(id); return; }
+    const h = HOSPITALS.find(x => x.id === id);
+    activeHospId = id;
+    const myTok = myTokens[id];
+    const ahead = myTok - h.current;
+    const pct = Math.max(5, Math.min(97, Math.round((h.current / myTok) * 100)));
+
+    document.getElementById('shHosp').textContent = h.name;
+    document.getElementById('shDept').textContent = h.dept;
+    document.getElementById('shNum').textContent = padNum(myTok);
+    document.getElementById('shCurr').textContent = padNum(h.current);
+    document.getElementById('shAhead').textContent = Math.max(0, ahead);
+    document.getElementById('shWait').textContent = Math.max(0, Math.round(ahead * 2.1)) + 'm';
+    document.getElementById('shPct').textContent = pct + '%';
+    document.getElementById('shProgressFill').style.width = pct + '%';
+    document.getElementById('shStatus').textContent = ahead <= 0 ? '🟢 It\'s your turn! Please go to the counter.' : '🟡 Waiting — you\'ll be notified when your turn is near.';
+    document.getElementById('overlay').classList.add('open');
+
+    document.getElementById('shAiText').textContent = 'Getting AI insights…';
+    document.getElementById('shAiText').className = 'loading';
+    fetchAI(h, myTok, ahead);
+    startSim();
+  }
+
+  async function fetchAI(h, tok, ahead) {
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 100,
+          messages: [{
+            role: 'user',
+            content: `You're a friendly queue assistant at ${h.name} in Himachal Pradesh. The patient holds token #${tok} for ${h.dept}. Currently serving #${h.current}, ${ahead} people ahead. Give ONE concise, warm, practical tip in 1 sentence. Be specific to the department and local context.`
+          }]
+        })
+      });
+      const data = await res.json();
+      const text = data.content?.find(b => b.type === 'text')?.text || 'Stay nearby — your turn is approaching soon.';
+      document.getElementById('shAiText').textContent = text.trim();
+      document.getElementById('shAiText').className = '';
+    } catch {
+      document.getElementById('shAiText').textContent = 'Keep your ID and medical documents ready for faster processing.';
+      document.getElementById('shAiText').className = '';
+    }
+  }
+
+  function startSim() {
+    if (simInterval) clearInterval(simInterval);
+    simInterval = setInterval(() => {
+      const id = activeHospId;
+      if (!id) return;
+      const h = HOSPITALS.find(x => x.id === id);
+      const myTok = myTokens[id];
+      if (!myTok || h.current >= myTok) { clearInterval(simInterval); return; }
+      h.current = Math.min(h.current + 1, myTok);
+      const ahead = myTok - h.current;
+      const pct = Math.max(5, Math.min(97, Math.round((h.current / myTok) * 100)));
+      document.getElementById('shCurr').textContent = padNum(h.current);
+      document.getElementById('shAhead').textContent = Math.max(0, ahead);
+      document.getElementById('shWait').textContent = Math.max(0, Math.round(ahead * 2.1)) + 'm';
+      document.getElementById('shPct').textContent = pct + '%';
+      document.getElementById('shProgressFill').style.width = pct + '%';
+      const cc = document.getElementById('card-curr-' + id);
+      if (cc) cc.textContent = padNum(h.current);
+      if (ahead <= 2 && ahead > 0) {
+        document.getElementById('shStatus').textContent = '🔔 Almost your turn! Please proceed to the counter now.';
+      } else if (ahead <= 0) {
+        document.getElementById('shStatus').textContent = '🟢 It\'s your turn! Please go to the counter now.';
+        clearInterval(simInterval);
+      }
+    }, 6000);
+  }
+
+  function closeSheet() {
+    document.getElementById('overlay').classList.remove('open');
+    activeHospId = null;
+    if (simInterval) clearInterval(simInterval);
+  }
+
+  function shareTicket() {
+    const id = activeHospId;
+    if (!id || !myTokens[id]) return;
+    const h = HOSPITALS.find(x => x.id === id);
+    const text = `My QueueLess Token: #${padNum(myTokens[id])} at ${h.name} (${h.dept}). Currently serving #${padNum(h.current)}.`;
+    if (navigator.share) {
+      navigator.share({ title: 'QueueLess Token', text });
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      showToast('📋 Token info copied!');
+    }
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2800);
+  }
+
+  // Filter pills
+  document.querySelectorAll('.pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeFilter = btn.dataset.filter;
+      renderList();
+    });
+  });
+
+  // Close overlay on backdrop tap
+  document.getElementById('overlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('overlay')) closeSheet();
+  });
+
+  renderList();
+</script>
+</body>
+</html>
